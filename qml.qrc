@@ -1,0 +1,59 @@
+<RCC>
+    <qresource prefix="/ui">
+        <file>ui/main.qml</file>
+    </qresource>
+    <qresource prefix="/icon">
+        <file>icon/application.ico</file>
+        <file>icon/addDevice.png</file>
+        <file>icon/setting.png</file>
+        <file>icon/vertical.png</file>
+        <file>icon/reset.png</file>
+        <file>icon/start.png</file>
+        <file>icon/unlock.png</file>
+        <file>icon/pauseDisable.png</file>
+        <file>icon/pauseEnable.png</file>
+        <file>icon/lockDisable.png</file>
+        <file>icon/lockEnable.png</file>
+        <file>icon/sourceDisable.png</file>
+        <file>icon/sourceEnable.png</file>
+        <file>icon/textureDisable.png</file>
+        <file>icon/textureEnable.png</file>
+        <file>icon/ShadingDisable.png</file>
+        <file>icon/ShadingEnable.png</file>
+        <file>icon/Measure.png</file>
+        <file>icon/exportDisable.png</file>
+        <file>icon/exportEnable.png</file>
+        <file>icon/exportClick.png</file>
+        <file>icon/MeasureClick.png</file>
+        <file>icon/ShadingClick.png</file>
+        <file>icon/sourceClick.png</file>
+        <file>icon/textureClick.png</file>
+        <file>icon/camera.png</file>
+    </qresource>
+    <qresource prefix="/shader">
+        <file>shader/skyBox.frag</file>
+        <file>shader/skyBox.vert</file>
+        <file>shader/coordinate.frag</file>
+        <file>shader/coordinate.vert</file>
+        <file>shader/grid.frag</file>
+        <file>shader/grid.vert</file>
+        <file>shader/cloud.frag</file>
+        <file>shader/cloud.vert</file>
+        <file>shader/depth.vert</file>
+        <file>shader/depth.frag</file>
+    </qresource>
+    <qresource prefix="/skyBox">
+        <file>cubeMap/nightSky2/1.png</file>
+        <file>cubeMap/nightSky2/2.png</file>
+        <file>cubeMap/nightSky2/3.png</file>
+        <file>cubeMap/nightSky2/4.png</file>
+        <file>cubeMap/nightSky2/5.png</file>
+        <file>cubeMap/nightSky2/6.png</file>
+        <file>cubeMap/nightSky/1.png</file>
+        <file>cubeMap/nightSky/2.png</file>
+        <file>cubeMap/nightSky/3.png</file>
+        <file>cubeMap/nightSky/4.png</file>
+        <file>cubeMap/nightSky/5.png</file>
+        <file>cubeMap/nightSky/6.png</file>
+    </qresource>
+</RCC>
