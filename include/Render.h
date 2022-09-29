@@ -1,6 +1,7 @@
 #ifndef RENDER_H
 #define RENDER_H
 
+#include <QQuickWindow>
 #include <QOpenGLExtraFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLVertexArrayObject>
@@ -19,7 +20,8 @@
 extern "C" void renderCloud_CUDA(const cv::cuda::GpuMat & depthImg, const cv::cuda::GpuMat & colorImg, const Eigen::Matrix3f & intrinsic_inc,
     float* ptrCloud);
 
-class Render : protected QOpenGLExtraFunctions{
+class Render : public QObject, protected QOpenGLFunctions{
+    Q_OBJECT
 public:
     enum SkyBox{
         lightNight = 0,
@@ -39,6 +41,7 @@ public:
     void initializeGL();
     void resizeGL(const int w,const int h);
     void repaintGL();
+    void setWindow(QQuickWindow* window);
 
     void setCameraPos(const QVector3D& cameraPos);
     void setView(const QQuaternion& quaternion);
@@ -59,6 +62,8 @@ public:
 protected:
 
 private:
+    //´°¿Ú
+    QQuickWindow* window;
     //Ìì¿ÕºÐ
     const int skyBoxWidth = 2048;
     const int skyBoxHeight = 2048;

@@ -2,14 +2,14 @@
 
 OpenGLItem::OpenGLItem() : render(nullptr), fps(0), front(QVector3D(0,0,-1)), right(QVector3D(1,0,0)),upper(QVector3D(0,1,0)),
     cameraPos(QVector3D(0,0,-500)),moveSensity(5.f),rotateSensity(0.5f),fovy(80),nearFarSensity(5.f),caliInfo(nullptr),isStop(true),
-    camera(nullptr),minDepth(1000),maxDepth(3000),grayExposureTime(600),colorExposureTime(600),isUpdateWindow(false), frameCaptured(0), frameRestructed(0){
+    camera(nullptr),minDepth(1000),maxDepth(3000),grayExposureTime(400),colorExposureTime(400),isUpdateWindow(false), frameCaptured(0), frameRestructed(0){
     timer.start(10,this);
     lastTime = QTime::currentTime();
     connect(this,&QQuickItem::windowChanged,this,[&](QQuickWindow* window){
         if(nullptr != window){
             connect(window,&QQuickWindow::beforeSynchronizing,this,&OpenGLItem::sync,Qt::DirectConnection);
             connect(window,&QQuickWindow::sceneGraphInvalidated,this,&OpenGLItem::cleanUp,Qt::DirectConnection);
-            window->setClearBeforeRendering(false);
+            window->setColor(Qt::white);
         }
     });
     imgsLast.resize(3);
@@ -24,9 +24,16 @@ void OpenGLItem::sync(){
         render = new Render();
         render->initializeGL();
         render->resizeGL(window()->width(),window()->height());
+        /*
         connect(window(),&QQuickWindow::beforeRendering,this,[&](){
+            render->initializeGL();
+            render->resizeGL(window()->width(),window()->height());
+        },Qt::DirectConnection);
+        */
+        connect(window(),&QQuickWindow::beforeRenderPassRecording,this,[&](){
             render->repaintGL();
         },Qt::DirectConnection);
+
         connect(window(),&QQuickWindow::afterRendering,this,[&](){
             //¼ÆËãfps
             /*
@@ -47,6 +54,7 @@ void OpenGLItem::sync(){
             render->resizeGL(window()->width(),window()->height());
         },Qt::DirectConnection);
     }
+    render->setWindow(window());
     window()->update();
 }
 
@@ -199,12 +207,16 @@ void OpenGLItem::creatImg() {
         if(frameCaptured == 0)
             creatorQueue.push(frame);
         else {
-            creatorQueue.push(RestructedFrame(std::vector<cv::Mat>(frame.leftImgs.begin(),frame.leftImgs.begin()+3),
-                std::vector<cv::Mat>(frame.rightImgs.begin(), frame.rightImgs.begin() + 3),
+            std::vector<cv::Mat> firstLeft(frame.leftImgs.begin(), frame.leftImgs.begin() + 3);
+            std::vector<cv::Mat> firstRight(frame.leftImgs.begin(), frame.leftImgs.begin() + 3);
+            std::vector<cv::Mat> secLeft(frame.leftImgs.end() - 3, frame.leftImgs.end());
+            std::vector<cv::Mat> secRight(frame.rightImgs.end() - 3, frame.rightImgs.end());
+            creatorQueue.push(RestructedFrame(firstLeft,
+                firstRight,
                 frame.colorImgs));
 
-            creatorQueue.push(RestructedFrame(std::vector<cv::Mat>(frame.leftImgs.end() - 3, frame.leftImgs.end()),
-                std::vector<cv::Mat>(frame.rightImgs.end() - 3, frame.rightImgs.end()),
+            creatorQueue.push(RestructedFrame(secLeft,
+                secRight,
                 frame.colorImgs));
         }
 
@@ -298,13 +310,13 @@ void OpenGLItem::startRun() {
 
         stream_Restructor.waitForCompletion();
         restructor->download(0, depthImg);
-        
+
         cv::Mat test[10];
         depthImg.download(test[0]);
         colorImg.download(test[1]);
         unwrapImgLeft_dev[0].download(test[4]);
         unwrapImgRight_dev[0].download(test[6]);
-                
+
         /*
         while (isUpdateWindow.load(std::memory_order_acquire)) {
             std::cout << "Displaying!" << std::endl;

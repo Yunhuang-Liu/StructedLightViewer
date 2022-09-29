@@ -1,8 +1,6 @@
-import QtQuick 2.12
+import QtQuick
 import QtQuick.Window 2.12
-import QtQuick.Controls 1.4 as Controls14
-import QtQuick.Controls.Styles 1.4 as ControlsStyle14
-import QtQuick.Controls 2.12
+import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import OpenGLItem 1.0
 
@@ -264,21 +262,23 @@ Window {
                 z:1
             }
 
-            Controls14.TreeView{
+            TreeView{
                 id: deviceView
                 implicitWidth: addSourceRec.width - 5
                 implicitHeight: parent.height
-                style: treeViewStyle
-                frameVisible: false
-                backgroundVisible: true
+                //style: treeViewStyle
+                //frameVisible: false
+                //backgroundVisible: true
+                /*
                 Component{
                     id:treeViewStyle
 
-                    ControlsStyle14.TreeViewStyle{
+                    TreeViewStyle{
                         //indentation: 20
                         backgroundColor: "black"
                     }
                 }
+                */
             }
 
             Rectangle{
@@ -1153,6 +1153,8 @@ Window {
                 implicitWidth: displaySetting.width
                 implicitHeight: parent.height - displaySetting.height
 
+                //z:1000000000
+
                 property point lastPoint: "0,0"
                 property int fovy: 80
                 property bool displayState: true
@@ -1199,14 +1201,14 @@ Window {
 
                     onPositionChanged: {
                         if(opengl.displayState){
-                            if(mouse.buttons == Qt.LeftButton){
+                            if(mouse.buttons === Qt.LeftButton){
                                 var xMove = mouse.x - parent.lastPoint.x;
                                 var yMove = mouse.y - parent.lastPoint.y;
                                 parent.lastPoint.x = mouse.x;
                                 parent.lastPoint.y = mouse.y;
                                 opengl.updateQuaternion(xMove,yMove);
                             }
-                            if(mouse.buttons == Qt.MiddleButton){
+                            if(mouse.buttons === Qt.MiddleButton){
                                 var xMove = mouse.x - parent.lastPoint.x;
                                 var yMove = mouse.y - parent.lastPoint.y;
                                 parent.lastPoint.x = mouse.x;
@@ -1250,13 +1252,13 @@ Window {
 
                     Keys.onPressed: {
                         if(opengl.displayState){
-                            if(event.key == Qt.Key_A)
+                            if(event.key === Qt.Key_A)
                                 opengl.updateCameraPos(true,false,false,false);
-                            if(event.key == Qt.Key_D)
+                            if(event.key === Qt.Key_D)
                                 opengl.updateCameraPos(false,true,false,false);
-                            if(event.key == Qt.Key_W)
+                            if(event.key === Qt.Key_W)
                                 opengl.dragNearst();
-                            if(event.key == Qt.Key_S)
+                            if(event.key === Qt.Key_S)
                                 opengl.dragFar();
                         }
                     }

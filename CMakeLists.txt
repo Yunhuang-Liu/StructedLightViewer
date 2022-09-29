@@ -12,7 +12,7 @@ set(CMAKE_BUILD_TYPE Debug)
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(Qt5 COMPONENTS Core OpenGLExtensions Quick)
+find_package(Qt6 COMPONENTS Core Gui Widgets Quick Qml)
 find_package(CUDA REQUIRED)
 if(CUDA_FOUND)
     add_definitions(-DCUDA)
@@ -20,9 +20,11 @@ endif()
 find_package(StructedLightCamera REQUIRED)
 
 include_directories(
-    ${Qt5Core_INCLUDE_DIRS}
-    ${Qt5Quick_INCLUDE_DIRS}
-    ${Qt5OpenGLExtensions_INCLUDE_DIRS}
+    ${Qt6Core_INCLUDE_DIRS}
+    ${Qt6Quick_INCLUDE_DIRS}
+    ${Qt6Gui_INCLUDE_DIRS}
+    ${Qt6Qml_INCLUDE_DIRS}
+    ${Qt6Widgets_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
     ${OpenCV_INCLUDE_DIRS}
     ${CUDA_INCLUDE_DIRS}
@@ -52,11 +54,14 @@ add_executable(
     ${CURRENT_Qml}
     )
 
+
 target_link_libraries(
     ${PROJECT_NAME}
-    Qt5::Core
-    Qt5::OpenGLExtensions
-    Qt5::Quick
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::Qml
+    Qt6::Widgets
     ${OpenCV_LIBRARIES}
     ${CUDA_LIBRARIES}
     ${StructedLightCamera_LIBRARIES})

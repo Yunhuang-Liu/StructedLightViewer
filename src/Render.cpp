@@ -1,7 +1,7 @@
 #include "../include/Render.h"
 
 Render::Render() : skyBoxArrayLightStyle(nullptr),skyBoxArrayDarkStyle(nullptr),skyBoxVbo(QOpenGLBuffer::VertexBuffer),fovy(80),cameraPos(0,0,-500), magCofficient(1.f),
-    coodinateVbo(QOpenGLBuffer::VertexBuffer),currentTexture(nullptr),rows(1024),cols(1280),isGetWorldPoint(false),meshEBO(QOpenGLBuffer::IndexBuffer),
+    coodinateVbo(QOpenGLBuffer::VertexBuffer),currentTexture(nullptr),rows(1024),cols(1280),isGetWorldPoint(false),meshEBO(QOpenGLBuffer::IndexBuffer), window(nullptr),
     displayState(DisplayState::threeDimensional),displayMode(DisplayMode::point),depthTexture(QOpenGLTexture::Target2D),depthBuffer(QOpenGLBuffer::VertexBuffer){
     model.setToIdentity();
     model.rotate(180, QVector3D(0, 0, 1));
@@ -37,6 +37,8 @@ void Render::resizeGL(const int w, const int h){
 }
 
 void Render::repaintGL(){
+    window->beginExternalCommands();
+
     glClearColor(0.0f,0.0f,0.0f,1.f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     drawSkyBox();
@@ -44,6 +46,8 @@ void Render::repaintGL(){
     drawGrid();
     std::lock_guard<std::mutex> renderLock(renderMutex);
     drawCloud();
+
+    window->endExternalCommands();
 }
 
 void Render::drawSkyBox(){
@@ -574,4 +578,8 @@ void Render::setDisplayState(const DisplayState displayState_){
 
 void Render::setMagCofficient(const float magCofficient_){
     magCofficient = magCofficient_;
+}
+
+void Render::setWindow(QQuickWindow* window_) {
+    window = window_;
 }

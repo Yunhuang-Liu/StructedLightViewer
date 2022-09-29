@@ -1,4 +1,6 @@
 #include <QGuiApplication>
+//#include <QApplication>
+#include <QQuickWindow>
 #include <QQmlApplicationEngine>
 #include <QIcon>
 #include "./include/OpenGLItem.h"
@@ -13,8 +15,9 @@ int main(int argc, char *argv[])
 
     app.setWindowIcon(QIcon(":/icon/icon/application.ico"));
 
-    QQmlApplicationEngine engine;
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 
+    QQmlApplicationEngine engine;
     qmlRegisterType<OpenGLItem>("OpenGLItem",1,0,"OpenGLItem");
 
     const QUrl url(QStringLiteral("qrc:/ui/ui/main.qml"));
@@ -24,6 +27,6 @@ int main(int argc, char *argv[])
             QCoreApplication::exit(-1);
     }, Qt::QueuedConnection);
     engine.load(url);
-
+    
     return app.exec();
 }
