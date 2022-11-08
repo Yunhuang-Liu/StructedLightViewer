@@ -9,7 +9,6 @@ Render::Render() : skyBoxArrayLightStyle(nullptr),skyBoxArrayDarkStyle(nullptr),
     view.translate(cameraPos);
     project.setToIdentity();
     rotateQuaternion = QQuaternion();
-    R1Inv.setToIdentity();
     colorTexture = cv::Mat(rows, cols, CV_8UC3, cv::Scalar(255, 255, 255));
 }
 
@@ -46,7 +45,7 @@ void Render::repaintGL(){
     drawGrid();
     std::lock_guard<std::mutex> renderLock(renderMutex);
     drawCloud();
-
+    
     window->endExternalCommands();
 }
 
@@ -501,7 +500,6 @@ void Render::drawCloud() {
         cloudVao.bind();
         //glBindBuffer(GL_ARRAY_BUFFER, cloudVbo);
         cloudProgram.bind();
-        cloudProgram.setUniformValue("R1Inv", R1Inv);
         cloudProgram.setUniformValue("model", model);
         cloudProgram.setUniformValue("view", view);
         cloudProgram.setUniformValue("project", project);
@@ -545,26 +543,10 @@ void Render::renderCloud(const cv::cuda::GpuMat& depthImg, const cv::cuda::GpuMa
     else{
         cv::Mat textureDepth;
         depthImg.download(textureDepth);
-        textureDepth = textureDepth / 50;
+        textureDepth = textureDepth / 8;
         textureDepth.convertTo(textureDepth, CV_8UC1);
         cv::applyColorMap(textureDepth, colorTexture, cv::COLORMAP_JET);
     }
-}
-
-void Render::setR1Inv(const cv::Mat& R1Inv_) {
-    cv::Mat transR1Inv = R1Inv_.t();
-    R1Inv.setToIdentity();
-    R1Inv(0, 0) = transR1Inv.ptr<double>(0)[0];
-    R1Inv(0, 1) = transR1Inv.ptr<double>(0)[1];
-    R1Inv(0, 2) = transR1Inv.ptr<double>(0)[2];
-
-    R1Inv(1, 0) = transR1Inv.ptr<double>(1)[0];
-    R1Inv(1, 1) = transR1Inv.ptr<double>(1)[1];
-    R1Inv(1, 2) = transR1Inv.ptr<double>(1)[2];
-
-    R1Inv(2, 0) = transR1Inv.ptr<double>(2)[0];
-    R1Inv(2, 1) = transR1Inv.ptr<double>(2)[1];
-    R1Inv(2, 2) = transR1Inv.ptr<double>(2)[2];
 }
 
 void Render::setMeshMode(const DisplayMode displayMode_){

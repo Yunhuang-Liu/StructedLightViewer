@@ -10,6 +10,7 @@
 #include <QQuaternion>
 #include <QImage>
 #include <QObject>
+#include <qsurfaceformat.h>
 #include <Eigen/Core>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/eigen.hpp>
@@ -116,7 +117,6 @@ private:
     void initializeCloud();
 
     std::mutex renderMutex;
-    QMatrix4x4 R1Inv;
 
     QOpenGLTexture depthTexture;
     QOpenGLVertexArrayObject depthVao;

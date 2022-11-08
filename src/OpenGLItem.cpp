@@ -1,9 +1,13 @@
 #include "../include/OpenGLItem.h"
 
+using namespace sl;
+using namespace sl::device;
+using namespace sl::tool;
+
 OpenGLItem::OpenGLItem() : render(nullptr), fps(0), front(QVector3D(0,0,-1)), right(QVector3D(1,0,0)),upper(QVector3D(0,1,0)),
     cameraPos(QVector3D(0,0,-500)),moveSensity(5.f),rotateSensity(0.5f),fovy(80),nearFarSensity(5.f),caliInfo(nullptr),isStop(true),
-    camera(nullptr),minDepth(1000),maxDepth(3000),grayExposureTime(400),colorExposureTime(400),isUpdateWindow(false), frameCaptured(0), frameRestructed(0){
-    timer.start(10,this);
+    camera(nullptr),minDepth(1000),maxDepth(2000),grayExposureTime(4000),colorExposureTime(4000),isUpdateWindow(false), frameCaptured(0), frameRestructed(0){
+    //timer.start(10,this);
     lastTime = QTime::currentTime();
     connect(this,&QQuickItem::windowChanged,this,[&](QQuickWindow* window){
         if(nullptr != window){
@@ -12,7 +16,10 @@ OpenGLItem::OpenGLItem() : render(nullptr), fps(0), front(QVector3D(0,0,-1)), ri
             window->setColor(Qt::white);
         }
     });
-    imgsLast.resize(3);
+    imgsOperateDevL.resize(4);
+    imgsOperateDevR.resize(4);
+    imgsOperateDevC.resize(4);
+    imgsOperateDevCColor.resize(4);
 }
 
 OpenGLItem::~OpenGLItem(){
@@ -67,12 +74,10 @@ void OpenGLItem::cleanUp(){
 
 void OpenGLItem::timerEvent(QTimerEvent *event){
     event->accept();
-    //if (isUpdateWindow.load(std::memory_order_acquire)) {
+    if (isUpdateWindow.load(std::memory_order_acquire)) {
         window()->update();
-        //isUpdateWindow.store(false, std::memory_order_release);
-    //}
-    //window()->update();
-    //isUpdateWindow.store(false, std::memory_order_release);
+        isUpdateWindow.store(false, std::memory_order_release);
+    }
 }
 
 int OpenGLItem::getFps(){
@@ -149,6 +154,7 @@ void OpenGLItem::changeScene(const int sceneType){
             }
         }
     }
+    window()->update();
 }
 
 void OpenGLItem::setViewPort(const bool isUpper, const bool isFront, const bool isLeft){
@@ -177,18 +183,13 @@ void OpenGLItem::setViewPort(const bool isUpper, const bool isFront, const bool 
 void OpenGLItem::start() {
     isStop.store(false, std::memory_order_release);
     startThread = std::thread(&OpenGLItem::startRun, this);
+    //等待一段时间让重建线程先行就绪完毕
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     creatorThread = std::thread(&OpenGLItem::creatImg, this);
 }
 
-void OpenGLItem::remapImg(const cv::Mat& src, const cv::cuda::GpuMat& remap_x, const cv::cuda::GpuMat& remap_y, cv::cuda::GpuMat& outImg, cv::cuda::Stream stream, const bool convertToGray) {
-    cv::cuda::GpuMat src_dev;
-    src_dev.upload(src, stream);
-    if (convertToGray)
-        cv::cuda::cvtColor(src_dev, src_dev, cv::COLOR_BGR2GRAY, 0, stream);
-    cv::cuda::remap(src_dev, outImg, remap_x, remap_y, cv::INTER_LINEAR, 0, cv::Scalar(), stream);
-}
-
 void OpenGLItem::pause(){
+    camera->stopProject();
     isStop.store(true, std::memory_order_release);
     startThread.join();
     creatorThread.join();
@@ -196,175 +197,256 @@ void OpenGLItem::pause(){
     creatorQueue.swap(emptyCreator);
     isUpdateWindow.store(false, std::memory_order_release);
     frameCaptured = 0;
+    frameRestructed = 0;
 }
 
 void OpenGLItem::creatImg() {
     camera->setCameraExposure(grayExposureTime, colorExposureTime);
+    RestructedFrame frame;
+    //连续投影有闪烁现象
+    camera->project(true);
     while (!isStop.load(std::memory_order_acquire)) {
-        auto start = std::chrono::system_clock::now();
-        RestructedFrame frame;
         camera->getOneFrameImgs(frame);
-        if(frameCaptured == 0)
-            creatorQueue.push(frame);
-        else {
-            std::vector<cv::Mat> firstLeft(frame.leftImgs.begin(), frame.leftImgs.begin() + 3);
-            std::vector<cv::Mat> firstRight(frame.leftImgs.begin(), frame.leftImgs.begin() + 3);
-            std::vector<cv::Mat> secLeft(frame.leftImgs.end() - 3, frame.leftImgs.end());
-            std::vector<cv::Mat> secRight(frame.rightImgs.end() - 3, frame.rightImgs.end());
-            creatorQueue.push(RestructedFrame(firstLeft,
-                firstRight,
-                frame.colorImgs));
-
-            creatorQueue.push(RestructedFrame(secLeft,
-                secRight,
-                frame.colorImgs));
+        creatorQueue.emplace(frame);
+        /*
+        if (frameCaptured == 0) {
+            creatorQueue.emplace(frame);
         }
+        else {
+            std::vector<cv::Mat> firstLeft(2);
+            std::vector<cv::Mat> firstRight(2);
+            std::vector<cv::Mat> firstColor(2);
+            std::vector<cv::Mat> secLeft(2);
+            std::vector<cv::Mat> secRight(2);
+            std::vector<cv::Mat> secColor(2);
+            for (int i = 0; i < 2; ++i) {
+                firstLeft[i] = frame.leftImgs[i];
+                firstRight[i] = frame.rightImgs[i];
+                firstColor[i] = frame.colorImgs[i];
+                secLeft[i] = frame.leftImgs[i + 2];
+                secRight[i] = frame.rightImgs[i + 2];
+                secColor[i] = frame.colorImgs[i + 2];
+            }
+            creatorQueue.emplace(RestructedFrame(firstLeft,
+                firstRight,
+                firstColor));
 
+            creatorQueue.emplace(RestructedFrame(secLeft,
+                secRight,
+                secColor));
+        }
+        */
         ++frameCaptured;
-
-        auto end = std::chrono::system_clock::now();
-        auto time = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() * static_cast<float>(std::chrono::microseconds::period::num) / std::chrono::milliseconds::period::den;
-        std::cout << "Capture img frame rate:" << 2.f / time << std::endl;
+        
+        std::vector<int> fpsCameras = camera->getFrameFps();
+        std::cout << "camera fps:" << fpsCameras[0] << "\t" << fpsCameras[1] << "\t" << fpsCameras[2] << std::endl;
     }
+}
+
+void OpenGLItem::initCaliEigen(const sl::tool::Info& info) {
+    cv::Mat M1, M2, M3, R, T, Rlc, Tlc, K1;
+    info.M1.convertTo(M1, CV_32FC1);
+    info.M2.convertTo(M2, CV_32FC1);
+    info.M3.convertTo(M3, CV_32FC1);
+    info.R.convertTo(R, CV_32FC1);
+    info.T.convertTo(T, CV_32FC1);
+    info.Rlc.convertTo(Rlc, CV_32FC1);
+    info.Tlc.convertTo(Tlc, CV_32FC1);
+    info.K1.convertTo(K1, CV_32FC1);
+    cv::cv2eigen(M1, caliEigen.intrinsicD);
+    cv::cv2eigen(M1.inv(), caliEigen.intrinsicInvD);
+    cv::cv2eigen(M2, caliEigen.intrinsicR);
+    cv::cv2eigen(M3, caliEigen.intrinsicC);
+    cv::cv2eigen(R, caliEigen.rotateDToR);
+    cv::cv2eigen(T, caliEigen.translateDToR);
+    cv::cv2eigen(Rlc, caliEigen.rotateDToC);
+    cv::cv2eigen(Tlc, caliEigen.translateDToC);
+    cv::cv2eigen(K1, caliEigen.coefficientD);
+    caliEigen.projectD << caliEigen.intrinsicD(0, 0), caliEigen.intrinsicD(0, 1), caliEigen.intrinsicD(0, 2), 0,
+                          caliEigen.intrinsicD(1, 0), caliEigen.intrinsicD(1, 1), caliEigen.intrinsicD(1, 2), 0,
+                          caliEigen.intrinsicD(2, 0), caliEigen.intrinsicD(2, 1), caliEigen.intrinsicD(2, 2), 0,
+                          0, 0, 0, 1;
+    Eigen::Matrix4f MR, TR;
+    MR << caliEigen.intrinsicR(0, 0), caliEigen.intrinsicR(0, 1),caliEigen.intrinsicR(0, 2), 0,
+          caliEigen.intrinsicR(1, 0), caliEigen.intrinsicR(1, 1),caliEigen.intrinsicR(1, 2), 0,
+          caliEigen.intrinsicR(2, 0), caliEigen.intrinsicR(2, 1),caliEigen.intrinsicR(2, 2), 0,
+          0, 0, 0, 1;
+    TR << caliEigen.rotateDToR(0, 0), caliEigen.rotateDToR(0, 1), caliEigen.rotateDToR(0, 2), caliEigen.translateDToR(0, 0),
+          caliEigen.rotateDToR(1, 0), caliEigen.rotateDToR(1, 1), caliEigen.rotateDToR(1, 2), caliEigen.translateDToR(1, 0),
+          caliEigen.rotateDToR(2, 0), caliEigen.rotateDToR(2, 1), caliEigen.rotateDToR(2, 2), caliEigen.translateDToR(2, 0),
+          0, 0, 0, 1;
+    caliEigen.projectR = MR * TR;
 }
 
 void OpenGLItem::startRun() {
     const Info& info = caliInfo->getInfo();
-    const cv::Size imgSize = cv::Size(info.S.at<double>(0,0), info.S.at<double>(1, 0));
-    render->setR1Inv(info.R1.inv());
-    cv::Mat invM1 = info.M1.inv();
-    invM1.convertTo(invM1, CV_32FC1);
-    Eigen::Matrix3f intrinsic_inv;
-    cv::cv2eigen(invM1, intrinsic_inv);
-    PhaseSolverType::FourFloorFourStepMaster_GPU* phaseSolverLeft = new PhaseSolverType::FourFloorFourStepMaster_GPU();
-    PhaseSolverType::FourFloorFourStepMaster_GPU* phaseSolverRight = new PhaseSolverType::FourFloorFourStepMaster_GPU();
-    RestructorType::Restructor_GPU* restructor = new RestructorType::Restructor_GPU(info, -400, 400, minDepth, maxDepth);
-    cv::Mat remap_x_L;
-    cv::Mat remap_y_L;
-    cv::Mat remap_x_R;
-    cv::Mat remap_y_R;
-    cv::cuda::GpuMat remap_x_deice_L;
-    cv::cuda::GpuMat remap_y_deice_L;
-    cv::cuda::GpuMat remap_x_deice_R;
-    cv::cuda::GpuMat remap_y_deice_R;
-    if (remap_x_L.empty()) {
-        cv::initUndistortRectifyMap(info.M1, info.D1, info.R1, info.P1, imgSize, CV_32FC1, remap_x_L, remap_y_L);
-        cv::initUndistortRectifyMap(info.M2, info.D2, info.R2, info.P2, imgSize, CV_32FC1, remap_x_R, remap_y_R);
-    }
-    if (remap_x_deice_L.empty()) {
-        remap_x_deice_L.upload(remap_x_L);
-        remap_y_deice_L.upload(remap_y_L);
-        remap_x_deice_R.upload(remap_x_R);
-        remap_y_deice_R.upload(remap_y_R);
-    }
+    const cv::Size imgSize = cv::Size(info.S.at<double>(0,0), info.S.at<double>(1, 0));    
+    std::unique_ptr<phaseSolver::FourStepRefPlainMaster_GPU> phaseSolveTool(new phaseSolver::FourStepRefPlainMaster_GPU(leftRefImg, true));
+    phaseSolveTool->setCounterMode(false);
+    std::unique_ptr<wrapCreator::WrapCreator_GPU> wrapCreateTool(new wrapCreator::WrapCreator_GPU());
     while (!isStop.load(std::memory_order_acquire)) {
-        while (creatorQueue.size() <= 0) { std::this_thread::sleep_for(std::chrono::milliseconds(30)); }
-        auto start = std::chrono::system_clock::now();
-        RestructedFrame& frame = creatorQueue.front();
+      if (creatorQueue.size() >= 1) {
+          auto start = std::chrono::steady_clock::now();
+          RestructedFrame& frame = creatorQueue.front();
+          // auto filter = cv::cuda::createGaussianFilter(CV_8UC1, CV_8UC1,
+          // cv::Size(3,3), 0.8);
+          std::vector<cv::cuda::Stream> streams(
+              3, cv::cuda::Stream(cudaStreamNonBlocking));
+          for (int i = 0; i < frame.leftImgs.size(); ++i) {
+            imgsOperateDevL[i].upload(frame.leftImgs[i], streams[0]);
+          }
 
-        frame.colorImgs.resize(1);
-        std::thread threadsCaculateColor = std::thread([&] {
-                if (frameRestructed == 0)
-                    frame.colorImgs[0] = (frame.leftImgs[2] + frame.leftImgs[4]) / 2;
-                else
-                    frame.colorImgs[0] = (imgsLast[2] + frame.leftImgs[1]) / 2;
-                cv::cvtColor(frame.colorImgs[0], frame.colorImgs[0], cv::COLOR_GRAY2BGR);
+          std::vector<cv::cuda::GpuMat> unwrapL;
+          phaseSolveTool->changeSourceImg(imgsOperateDevL);
+          phaseSolveTool->getUnwrapPhaseImg(unwrapL, streams[0]);
+
+          cv::cuda::GpuMat depthImg;
+          sl::tool::cudaFunc::phaseHeightMapEigCoe(
+              unwrapL[0], caliEigen.intrinsicD, caliEigen.coefficientD, 1200,
+              1600, depthImg, dim3(32, 8), streams[0]);
+
+          for (int i = 0; i < frame.rightImgs.size(); ++i) {
+            imgsOperateDevR[i].upload(frame.rightImgs[i], streams[1]);
+          }
+
+          cv::cuda::GpuMat wrapImgR, conditinImgR;
+          wrapCreateTool->getWrapImg(imgsOperateDevR, wrapImgR, conditinImgR,
+                                     false, streams[1]);
+
+          for (int i = 0; i < frame.colorImgs.size(); ++i) {
+            imgsOperateDevCColor[i].upload(frame.colorImgs[i], streams[2]);
+            cv::cuda::cvtColor(imgsOperateDevCColor[i], imgsOperateDevCColor[i],
+                             cv::COLOR_BayerRG2BGR, 3, streams[2]);
+            cv::cuda::cvtColor(imgsOperateDevCColor[i], imgsOperateDevC[i],
+                             cv::COLOR_BGR2GRAY, 1, streams[2]);
+          }
+          
+          cv::cuda::GpuMat wrapImgC, conditionImgC;
+          wrapCreateTool->getWrapImg(imgsOperateDevC, wrapImgC, conditionImgC,
+                                   false, streams[2]);
+
+          cv::cuda::GpuMat texture;
+          sl::tool::cudaFunc::averageTexture(imgsOperateDevCColor, texture,
+                                           dim3(32, 8), streams[2]);
+          // if (frameRestructed == 0) {
+          // filter->apply(imgsOperateDevL[i], imgsOperateDevL[i], streams[0]);
+
+          // filter->apply(imgsOperateDevR[i], imgsOperateDevR[i], streams[1]);
+
+          // filter->apply(imgsOperateDevC[i], imgsOperateDevC[i], streams[2]);
+          //}
+          /*
+          else if(frameRestructed % 2 == 0){
+              imgsOperateDevL[i + 2].upload(frame.leftImgs[i], streams[i]);
+              imgsOperateDevR[i + 2].upload(frame.rightImgs[i], streams[i]);
+              imgsOperateDevCColor[i + 2].upload(frame.colorImgs[i], streams[i]);
+              cv::cuda::cvtColor(imgsOperateDevCColor[i + 2],
+              imgsOperateDevCColor[i + 2], cv::COLOR_BayerRG2BGR, 0, streams[i]);
+              cv::cuda::cvtColor(imgsOperateDevCColor[i + 2], imgsOperateDevC[i +
+              2], cv::COLOR_BGR2GRAY, 0, streams[i]); filter->apply(imgsOperateDevL[i
+              + 2], imgsOperateDevL[i + 2], streams[i]);
+                filter->apply(imgsOperateDevR[i + 2], imgsOperateDevR[i + 2],
+              streams[i]); filter->apply(imgsOperateDevC[i + 2], imgsOperateDevC[i +
+              2], streams[i]);
             }
-        );
+            else {
+                imgsOperateDevL[i].upload(frame.leftImgs[i], streams[i]);
+                imgsOperateDevR[i].upload(frame.rightImgs[i], streams[i]);
+                imgsOperateDevCColor[i].upload(frame.colorImgs[i], streams[i]);
+                cv::cuda::cvtColor(imgsOperateDevCColor[i], imgsOperateDevCColor[i],
+                cv::COLOR_BayerRG2BGR, 0, streams[i]);
+                cv::cuda::cvtColor(imgsOperateDevCColor[i], imgsOperateDevC[i],
+              cv::COLOR_BGR2GRAY, 0, streams[i]); filter->apply(imgsOperateDevL[i],
+              imgsOperateDevL[i], streams[i]); filter->apply(imgsOperateDevR[i],
+              imgsOperateDevR[i], streams[i]); filter->apply(imgsOperateDevC[i],
+              imgsOperateDevC[i], streams[i]);
+              }
+              */
+            //}
 
-        const int imgNums = frame.leftImgs.size();
-        std::vector<cv::cuda::Stream> streamsRecImg(imgNums * 2, cv::cuda::Stream(cudaStreamNonBlocking));
-        std::vector<cv::cuda::GpuMat> imgRec_dev_L(imgNums);
-        std::vector<cv::cuda::GpuMat> imgRec_dev_R(imgNums);
-        for (int i = 0; i < imgNums; i++) {
-            imgRec_dev_L[i] = cv::cuda::createContinuous(imgSize, CV_8UC1);
-            remapImg(frame.leftImgs[i], remap_x_deice_L, remap_y_deice_L, imgRec_dev_L[i], streamsRecImg[i * 2],false);
-            imgRec_dev_R[i] = cv::cuda::createContinuous(imgSize, CV_8UC1);
-            remapImg(frame.rightImgs[i], remap_x_deice_R, remap_y_deice_R, imgRec_dev_R[i], streamsRecImg[i * 2 + 1], false);
-        }
+          for (auto& stream : streams) 
+              stream.waitForCompletion();
 
-        threadsCaculateColor.join();
+          cv::cuda::GpuMat depthRefine;
+          sl::tool::cudaFunc::reverseMappingRefine(
+              unwrapL[0], depthImg, wrapImgR, conditinImgR, wrapImgC,
+              conditionImgC, caliEigen.intrinsicInvD, caliEigen.intrinsicR,
+              caliEigen.intrinsicC, caliEigen.rotateDToR, caliEigen.translateDToR,
+              caliEigen.rotateDToC, caliEigen.translateDToC, caliEigen.projectD,
+              caliEigen.projectR, 0.6f, epilinesA, epilinesB, epilinesC,
+              depthRefine);
 
-        for (auto& stream : streamsRecImg) {
-            stream.waitForCompletion();
-        }
+          cv::cuda::GpuMat textureMapped;
+          sl::tool::cudaFunc::reverseMappingTexture(
+              depthRefine, texture, caliEigen.intrinsicInvD, caliEigen.intrinsicC,
+              caliEigen.rotateDToC, caliEigen.translateDToC, textureMapped);
+            cv::Mat test[10];
+            unwrapL[0].download(test[0]);
+            depthImg.download(test[1]);
+            conditinImgR.download(test[2]);
+            conditionImgC.download(test[3]);
+            depthRefine.download(test[4]);
+            texture.download(test[5]);
+            textureMapped.download(test[6]);
+            cv::imwrite("depth_0.tiff", test[4]);
+            cv::imwrite("depth.tiff", test[1]);
+            cv::imwrite("texture_0.png", test[6]);
+            /*
+            cv::imwrite("../../systemFile/outFile/depth/depth_" +
+            std::to_string(frameRestructed) + ".tiff", test[0]);
+            cv::imwrite("../../systemFile/outFile/color/color_" +
+            std::to_string(frameRestructed) + ".bmp", test[1]);
+            cv::imwrite("../../systemFile/outFile/img/L/wrap_" +
+            std::to_string(frameRestructed) + ".tiff", test[2]);
+            cv::imwrite("../../systemFile/outFile/img/L/condition_" +
+            std::to_string(frameRestructed) + ".tiff", test[4]);
+            cv::imwrite("../../systemFile/outFile/img/R/wrap_" +
+            std::to_string(frameRestructed) + ".tiff", test[3]);
+            cv::imwrite("../../systemFile/outFile/img/R/condition_" +
+            std::to_string(frameRestructed) + ".tiff", test[5]);
+            */
 
-        phaseSolverLeft->changeSourceImg(imgRec_dev_L);
-        phaseSolverRight->changeSourceImg(imgRec_dev_R);
+          render->renderCloud(depthRefine, textureMapped,
+                              caliEigen.intrinsicInvD);
 
-        cv::cuda::Stream leftSolvePhase(cudaStreamNonBlocking);
-        cv::cuda::Stream rightSolvePhase(cudaStreamNonBlocking);
-        std::vector<cv::cuda::GpuMat> unwrapImgLeft_dev;
-        std::vector<cv::cuda::GpuMat> unwrapImgRight_dev;
-        phaseSolverLeft->getUnwrapPhaseImg(unwrapImgLeft_dev, leftSolvePhase);
-        phaseSolverRight->getUnwrapPhaseImg(unwrapImgRight_dev, rightSolvePhase);
+          isUpdateWindow.store(true, std::memory_order_release);
 
-        leftSolvePhase.waitForCompletion();
-        rightSolvePhase.waitForCompletion();
+          creatorQueue.pop();
+          //++frameRestructed;
 
-        cv::cuda::Stream stream_Restructor(cudaStreamNonBlocking);
-        cv::cuda::GpuMat depthImg;
-        cv::cuda::GpuMat colorImg;
-        colorImg.upload(frame.colorImgs[0], stream_Restructor);
-        restructor->restruction(unwrapImgLeft_dev[0], unwrapImgRight_dev[0], 0, stream_Restructor);
+          std::cout << "queue size :" << creatorQueue.size() << std::endl;
 
-        stream_Restructor.waitForCompletion();
-        restructor->download(0, depthImg);
+          auto end = std::chrono::steady_clock::now();
+          auto time =std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() * static_cast<float>(std::chrono::milliseconds::period::num) / std::chrono::milliseconds::period::den;
+          fps = 1.f / time;
+          emit fpsChanged();
 
-        cv::Mat test[10];
-        depthImg.download(test[0]);
-        colorImg.download(test[1]);
-        unwrapImgLeft_dev[0].download(test[4]);
-        unwrapImgRight_dev[0].download(test[6]);
-
-        /*
-        while (isUpdateWindow.load(std::memory_order_acquire)) {
-            std::cout << "Displaying!" << std::endl;
-            if (isStop.load(std::memory_order_acquire))
-                break;
-        }
-        */
-        render->renderCloud(depthImg, colorImg, intrinsic_inv);
-        //isUpdateWindow.store(true, std::memory_order_release);
-
-        //imgsLast.clear();
-        if (frameRestructed == 0) {
-            imgsLast[0] = frame.leftImgs[3];
-            imgsLast[1] = frame.leftImgs[4];
-            imgsLast[2] = frame.leftImgs[5];
-        }
-        else {
-            imgsLast[0] = frame.leftImgs[0];
-            imgsLast[1] = frame.leftImgs[1];
-            imgsLast[2] = frame.leftImgs[2];
-        }
-        creatorQueue.pop();
-
-        ++frameRestructed;
-
-        auto end = std::chrono::system_clock::now();
-        auto time = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() * static_cast<float>(std::chrono::microseconds::period::num) / std::chrono::milliseconds::period::den;
-        fps = 1 / time;
-        emit fpsChanged();
-        //std::cout << "RenderRate:" << 1 / time << std::endl;
-
-        if (isStop.load(std::memory_order_acquire))
-            break;
+          // std::cout << "time used :" << time << std::endl;
+      }
     }
-    delete restructor;
-    delete phaseSolverLeft;
-    delete phaseSolverRight;
 }
 
 bool OpenGLItem::connectCamera(){
     try{
         //更完善的软件设计方式应当增加异常处理
-        if(nullptr == caliInfo)
-            caliInfo = new MatrixsInfo("../../systemFile/calibrationFiles/intrinsic.yml", "../../systemFile/calibrationFiles/extrinsic.yml");
-        if (nullptr == camera){
-            camera = new CameraControl(6, CameraControl::CameraUsedState::LeftGrayRightGray);
-            camera->setCaptureImgsNum(6, 6);
+        if (nullptr == caliInfo) {
+            caliInfo = new MatrixsInfo(
+                  "../../systemFile/calibrationFiles/intrinsic.yml",
+                  "../../systemFile/calibrationFiles/extrinsic.yml");
+            initCaliEigen(caliInfo->getInfo());
         }
+
+        if (nullptr == camera){
+            camera = new CameraControl(4, CameraControl::CameraUsedState::LeftGrayRightGrayExColor);
+        }
+        
+        leftRefImg = cv::imread("../../systemFile/refImg/refImgL.tiff", cv::IMREAD_UNCHANGED);
+        cv::Mat epilineA_CV = cv::imread("../../systemFile/epilines/epilinesA.tiff", cv::IMREAD_UNCHANGED);
+        cv::Mat epilineB_CV = cv::imread("../../systemFile/epilines/epilinesB.tiff", cv::IMREAD_UNCHANGED);
+        cv::Mat epilineC_CV = cv::imread("../../systemFile/epilines/epilinesC.tiff", cv::IMREAD_UNCHANGED);
+        epilinesA.upload(epilineA_CV);
+        epilinesB.upload(epilineB_CV);
+        epilinesC.upload(epilineC_CV);
     }
     catch(...){
         return false;
